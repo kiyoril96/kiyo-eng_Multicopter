@@ -105,7 +105,7 @@ function addRig(pos)
     rigid = physics.RigidBody({filename = './model/kiyo-eng_5inch/quad.kn5' 
         , filter='colider'
         , debug=Config.debugMode
-        , transform=true} ,0.700)
+        , transform=true} ,0.7)
     rigid:setSemiDynamic(false,false)
     
     -- スポーン位置を車の目の前に移動
@@ -116,8 +116,11 @@ function addRig(pos)
     rigid:setTransformation(transform)
     
     -- 抗力の設定
-    local angledamping = 0.00015 * ac.getSim().fps
-    local damping = 0.000035 * ac.getSim().fps
+    --local angledamping = (1 / ac.getSim().fps) 
+    --local damping = (0.3 / ac.getSim().fps) 
+    local angledamping = 0.016
+    local damping = 0.002
+
     rigid:setDamping(damping,angledamping,true)
     rigid:setInWorld(false)
 
@@ -193,7 +196,8 @@ function windowMain()
 end
 
 -- 推力係数
-local pow = 45
+local powPerSec =2600
+local pow = 0
 -- 推力
 local FLFoce = 0
 local FRFoce = 0
@@ -251,6 +255,11 @@ function fpvUpdate(dt)
         end
 
         getJoystickInput()
+
+        pow = powPerSec /ac.getSim().fps
+        --local angledamping = (0.1 / ac.getSim().fps) 
+        --local damping = (0.03 / ac.getSim().fps) 
+        --rigid:setDamping(damping,angledamping,true)
 
         -- スロットル出力のマッピング
         foce = math.clamp(math.remap(rawThrottle, JoyStick.throttleMin, JoyStick.throttleMax, 0, 1), 0, 1)

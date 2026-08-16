@@ -9,9 +9,6 @@ local Config = ac.storage{
     pitchMix = 0.03,
     rollMix = 0.03,
     yawMix = 0.02,
-
-    damping = 0.005,
-    angleDamping = 0.016
 }
 local JoyStick = ac.storage{
     GUID = "",
@@ -39,6 +36,8 @@ local JoyStick = ac.storage{
     yawMin = -1,
     yawExpo = 0.7,
 }
+
+local JoyStickIndex = -1
 
 -- 読み込み用のノードを用意しておく
 local dynamicRef = ac.findNodes('dynamicRoot:yes')
@@ -117,8 +116,8 @@ function addRig(pos)
     rigid:setTransformation(transform)
     
     -- 抗力の設定
-    local angledamping = Config.angleDamping
-    local damping = Config.damping
+    local angledamping = 0.00015 * ac.getSim().fps
+    local damping = 0.000035 * ac.getSim().fps
     rigid:setDamping(damping,angledamping,true)
     rigid:setInWorld(false)
 
@@ -194,7 +193,7 @@ function windowMain()
 end
 
 -- 推力係数
-local pow = 100
+local pow = 45
 -- 推力
 local FLFoce = 0
 local FRFoce = 0
@@ -619,23 +618,29 @@ function FpvStickSetting()
     local value, changed = ui.slider('##yaw', Config.yawMix ,0 , 0.1,'%.04f')
     if changed then Config.yawMix = value end
 
-    ui.offsetCursorY(20)
-    ui.textAligned("Physics",vec2(1, 0.5),vec2(60,20))
-    ui.textAligned("Damping:",vec2(1, 0.5),vec2(90,20))
-    ui.sameLine()
-    ui.setNextItemWidth(250)
-    local value, changed = ui.slider('##damping', Config.damping ,0.001 , 0.01,'%.05f')
-    if changed then Config.damping = value end
-    ui.sameLine()
-    ui.text('   初期値: 0.005')
+    -- ui.offsetCursorY(20)
+    -- ui.textAligned("Physics",vec2(1, 0.5),vec2(60,20))
+    -- ui.textAligned("Damping:",vec2(1, 0.5),vec2(90,20))
+    -- ui.sameLine()
+    -- ui.setNextItemWidth(250)
+    -- local value, changed = ui.slider('##damping', Config.damping ,0.001 , 0.01,'%.05f')
+    -- if changed then Config.damping = value end
+    -- ui.sameLine()
+    -- ui.text('   初期値: 0.005')
+-- 
+    -- ui.textAligned("AngleDamping:",vec2(1, 0.5),vec2(90,20))
+    -- ui.sameLine()
+    -- ui.setNextItemWidth(250)
+    -- local value, changed = ui.slider('##angledamping', Config.angleDamping ,0.001 , 0.05,'%.05f')
+    -- if changed then Config.angleDamping = value end
+    -- ui.sameLine()
+    -- ui.text('   初期値: 0.016')
 
-    ui.textAligned("AngleDamping:",vec2(1, 0.5),vec2(90,20))
+    ui.offsetCursorY(20)
+    ui.textAligned("Debug",vec2(1, 0.5),vec2(60,20))
     ui.sameLine()
-    ui.setNextItemWidth(250)
-    local value, changed = ui.slider('##angledamping', Config.angleDamping ,0.001 , 0.05,'%.05f')
-    if changed then Config.angleDamping = value end
-    ui.sameLine()
-    ui.text('   初期値: 0.016')
+    ui.offsetCursorX(20)
+    if ui.checkbox('###devMode' , Config.debugMode)  then Config.debugMode = not Config.debugMode end
 
 end
 

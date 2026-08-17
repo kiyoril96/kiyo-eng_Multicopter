@@ -39,17 +39,38 @@ local JoyStick = ac.storage{
 
 local JoyStickIndex = -1
 
--- 読み込み用のノードを用意しておく
-local dynamicRef = ac.findNodes('dynamicRoot:yes')
-local droneRef = dynamicRef:createNode('DRONE',false)
-local seneRef = ac.findNodes('sceneRoot:yes')
+local droneConfig ={}
 
--- サウンドイベント読み込み
-local soundbankLoaded = ac.loadSoundbank('./model/kiyo-eng_5inch/sfx/kiyo-eng_qc.bank', './model/kiyo-eng_5inch/sfx/GUIDs.txt')
-local sound = ac.AudioEvent('event:/kiyo-eng_qc/power', true, true)
+-- 読み込み用のノードを用意しておく
+---@class ac.SceneReference
+local dynamicRef
+---@class ac.SceneReference
+local droneRef
+---@class ac.SceneReference
+local seneRef
+
+-- サウンドイベント
+local soundbankLoaded
+local sound
+
+-- 読み込み用のノードを用意しておく
+dynamicRef = ac.findNodes('dynamicRoot:yes')
+droneRef = dynamicRef:createNode('DRONE',false)
+seneRef = ac.findNodes('sceneRoot:yes')
+
+-- デフォルトサウンドイベント読み込み
+soundbankLoaded = ac.loadSoundbank('./model/kiyo-eng_5inch/sfx/kiyo-eng_qc.bank', './model/kiyo-eng_5inch/sfx/GUIDs.txt')
+sound = ac.AudioEvent('event:/kiyo-eng_qc/power', true, true)
 
 sound:setVolumeChannel(ac.AudioChannel.Main)
 sound.volume = Config.droneVolume
+
+-- FPV用のジオメトリショット
+local canvas = ui.ExtraCanvas(vec2(800,600),1,render.TextureFormat.R16G16B16A16.Float)
+canvas:setName('test')
+local shot = ac.GeometryShot(seneRef,vec2(800,600),1,true,render.AntialiasingMode.YEBIS, render.TextureFormat.R16G16B16A16.Float)
+shot:setClippingPlanes(0.01, 5e3)
+shot:setBestSceneShotQuality()
 
 -- ドキュメントの参照用に明示
 ---@class physics.RigidBody
@@ -60,6 +81,57 @@ local drone =nil
 local camera =nil
 ---@class ac.SceneReference
 local eye =nil
+
+local pitchMixMult = 1
+local rollMixMult = 1
+local yawMixMult = 1
+local mass = 0.7
+local dampingMult =1
+
+local motorFLPos = vec3()
+local motorFRPos = vec3()
+local motorRLPos = vec3()
+local motorRRPos = vec3()
+local propellerOffset =vec3()
+local kn5fileName =''
+local viewPointNode = ''
+local cameraNode = ''
+local propellerNode = ''
+local coliderNode = '' 
+local powPerSec = 0
+
+function loadDrone(name)
+    
+    if drone then drone:dispose() end 
+    if rigid then 
+        rigid:setInWorld(false) 
+        rigid=nil
+    end
+
+    droneConfig = ac.INIConfig.load(ac.getFolder(ac.FolderID.ScriptOrigin)..'/model/'..name..'/drone.ini',ac.INIFormat.Extended)
+    local sfx = droneConfig:get('sfx','sfx','')
+    local powerEvent = droneConfig:get('sfx','powerEvent','')
+    soundbankLoaded = ac.loadSoundbank('./model/'..name..'/sfx/'..sfx, './model/'..name..'/sfx/GUIDs.txt')
+    sound = ac.AudioEvent(powerEvent, true, true)
+    sound:setVolumeChannel(ac.AudioChannel.Main)
+    pitchMixMult =droneConfig:get( 'control','pitchMix', 1)
+    rollMixMult =droneConfig:get( 'control','rollMix', 1)
+    yawMixMult =droneConfig:get( 'control','yawMix', 1)
+    mass = droneConfig:get('drone','mass' ,0.700)
+    dampingMult = droneConfig:get('drone','damping' ,1)
+    powPerSec = droneConfig:get('drone','foce' ,2600)
+    motorFLPos = droneConfig:get('drone','motorFLPos' ,vec3(0.074,0.006,0.072))
+    motorFRPos = droneConfig:get('drone','motorFRPos' ,vec3(-0.074,0.006,0.072))
+    motorRLPos = droneConfig:get('drone','motorRLPos' ,vec3(0.074,0.006,-0.072))
+    motorRRPos = droneConfig:get('drone','motorRRPos' ,vec3(-0.074,0.006,-0.072))
+    propellerOffset = vec3(0,droneConfig:get('drone','propellerOffset',0),0)
+
+    viewPointNode = droneConfig:get('model','viewPoint','')
+    cameraNode = droneConfig:get('model','camera','')
+    kn5fileName = name..'/'..droneConfig:get('model','file','')
+    propellerNode = droneConfig:get('model','propeller','')
+    coliderNode = droneConfig:get('model','colider','')
+end
 
 local cameraPos=vec3()
 local camerLook=vec3()
@@ -74,38 +146,31 @@ function setCameraAngle(newAngle)
     end
 end
 
-local motorFLPos = vec3()
-local motorFRPos = vec3()
-local motorRLPos = vec3()
-local motorRRPos = vec3()
-local properaOffset =vec3()
-
 -- 剛体をスポーンさせる
--- ついでにドローンの初期設定をする
 function addRig(pos) 
     -- すでに読み込まれているものがあったら先に削除
     if drone then drone:dispose() end 
     if rigid then rigid:setInWorld(false) end
-    drone = droneRef:loadKN5({filename = './model/kiyo-eng_5inch/quad.kn5'})
-    camera = drone:findNodes('maincamera')
+    drone = droneRef:loadKN5({filename = './model/'..kn5fileName})
+    camera = drone:findNodes(cameraNode)
     -- カメラの角度を設定 
     camera:rotate(vec3(1,0,0), math.rad(-Config.cameraAngle))
-    eye = drone:findNodes('eye')
+    eye = drone:findNodes(viewPointNode)
 
     -- モータの場所 ini 化するかノードから読みたいところ
     -- ノード読み出しだとずれるなぁ...
-    motorFLPos = vec3(0.074,0.006,0.072)
-    motorFRPos = vec3(-0.074,0.006,0.072)
-    motorRLPos = vec3(0.074,0.006,-0.072)
-    motorRRPos = vec3(-0.074,0.006,-0.072)
+    --motorFLPos = vec3(0.074,0.006,0.072)
+    --motorFRPos = vec3(-0.074,0.006,0.072)
+    --motorRLPos = vec3(0.074,0.006,-0.072)
+    --motorRRPos = vec3(-0.074,0.006,-0.072)
     -- プロペラの高さオフセット たぶんロールに影響する
-    properaOffset = vec3(0,0.0043,0)
+    --propellerOffset = vec3(0,0.0043,0)
 
     -- 剛体を作成 モデルに含まれるメッシュを基に作る
-    rigid = physics.RigidBody({filename = './model/kiyo-eng_5inch/quad.kn5' 
-        , filter='colider'
+    rigid = physics.RigidBody({filename = './model/'..kn5fileName 
+        , filter=coliderNode
         , debug=Config.debugMode
-        , transform=true} ,0.7)
+        , transform=true} ,mass)
     rigid:setSemiDynamic(false,false)
     
     -- スポーン位置を車の目の前に移動
@@ -118,7 +183,7 @@ function addRig(pos)
     -- 抗力の設定
     --local angledamping = (1 / ac.getSim().fps) 
     --local damping = (0.3 / ac.getSim().fps) 
-    local angledamping = 0.016
+    local angledamping = 0.016 * dampingMult
     local damping = 0.002
 
     rigid:setDamping(damping,angledamping,true)
@@ -135,13 +200,6 @@ function getPutPos()
     local offset = (car.side * 0) +(car.up *1) +(car.look * 4)
     return (( wheels[0].contactPoint + wheels[1].contactPoint )/2)  + offset
 end
-
--- FPV用のジオメトリショット
-local canvas = ui.ExtraCanvas(vec2(800,600),1,render.TextureFormat.R16G16B16A16.Float)
-canvas:setName('test')
-local shot = ac.GeometryShot(seneRef,vec2(800,600),1,true,render.AntialiasingMode.YEBIS, render.TextureFormat.R16G16B16A16.Float)
-shot:setClippingPlanes(0.01, 5e3)
-shot:setBestSceneShotQuality()
 
 function windowMain()
 
@@ -180,7 +238,6 @@ function windowMain()
         })
         canvas:update(fpvHUD)
 
-
         local p1 = vec2(0,100)
         local rato = canvas:size().y/canvas:size().x
         local sizeoffset = vec2(
@@ -196,7 +253,6 @@ function windowMain()
 end
 
 -- 推力係数
-local powPerSec =2600
 local pow = 0
 -- 推力
 local FLFoce = 0
@@ -265,38 +321,38 @@ function fpvUpdate(dt)
         foce = math.clamp(math.remap(rawThrottle, JoyStick.throttleMin, JoyStick.throttleMax, 0, 1), 0, 1)
         
         -- 感度曲線の適用
-        roll  = applyExpo( math.remap(rawRoll,JoyStick.rollMin, JoyStick.rollMax,-1,1)  ,JoyStick.rollExpo)
-        pitch = applyExpo( math.remap(rawPitch,JoyStick.pitchMin, JoyStick.pitchMax,-1,1)  ,JoyStick.pitchExpo)
-        yaw   = applyExpo( math.remap(rawYaw,JoyStick.yawMin, JoyStick.yawMax,-1,1)  ,JoyStick.yawExpo) 
+        roll  = applyExpo( math.clamp( math.remap(rawRoll,JoyStick.rollMin, JoyStick.rollMax,-1,1),-1,1),JoyStick.rollExpo)
+        pitch = applyExpo( math.clamp( math.remap(rawPitch,JoyStick.pitchMin, JoyStick.pitchMax,-1,1),-1,1),JoyStick.pitchExpo)
+        yaw   = applyExpo( math.clamp( math.remap(rawYaw,JoyStick.yawMin, JoyStick.yawMax,-1,1),-1,1),JoyStick.yawExpo) 
 
 
         -- 推力
-        FLFoce = math.max( (foce) - (pitch * Config.pitchMix) + (roll * Config.rollMix) + ( yaw*Config.yawMix) ,0)
-        FRFoce = math.max( (foce) - (pitch * Config.pitchMix) - (roll * Config.rollMix) + (-yaw*Config.yawMix) ,0)
-        RLFoce = math.max( (foce) + (pitch * Config.pitchMix) + (roll * Config.rollMix) + (-yaw*Config.yawMix) ,0)
-        RRFoce = math.max( (foce) + (pitch * Config.pitchMix) - (roll * Config.rollMix) + ( yaw*Config.yawMix) ,0)
+        FLFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
+        FRFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
+        RLFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
+        RRFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
         -- 対抗トルク(斜めに掛けるので0.5√2しとく)
-        FLTorq = foce + (yaw*Config.yawMix) * 0.5 * math.sqrt(2)
-        FRTorq = foce - (yaw*Config.yawMix) * 0.5 * math.sqrt(2)
-        RLTorq = foce - (yaw*Config.yawMix) * 0.5 * math.sqrt(2)
-        RRTorq = foce + (yaw*Config.yawMix) * 0.5 * math.sqrt(2)
+        FLTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        FRTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        RLTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        RRTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
 
         -- 実際の適用値へ
         -- モーターパワー
-        motorFLFoce = vec3(0,(FLFoce*pow),0)
-        motorFRFoce = vec3(0,(FRFoce*pow),0)
-        motorRLFoce = vec3(0,(RLFoce*pow),0)
-        motorRRFoce = vec3(0,(RRFoce*pow),0)
+        motorFLFoce = vec3( 0 ,(FLFoce*pow) ,0 )
+        motorFRFoce = vec3( 0 ,(FRFoce*pow) ,0 )
+        motorRLFoce = vec3( 0 ,(RLFoce*pow) ,0 )
+        motorRRFoce = vec3( 0 ,(RRFoce*pow) ,0 )
         -- トルク
-        motorFLtorq = vec3((-FLTorq*pow) ,0 ,(FLTorq*pow))
-        motorFRtorq = vec3(( FRTorq*pow) ,0 ,(FRTorq*pow))
-        motorRLtorq = vec3((-RLTorq*pow) ,0 ,(-RLTorq*pow))
-        motorRRtorq = vec3(( RRTorq*pow) ,0 ,(-RRTorq*pow))
+        motorFLtorq = vec3(( -FLTorq*pow ) ,0 ,( FLTorq*pow))
+        motorFRtorq = vec3((  FRTorq*pow ) ,0 ,( FRTorq*pow))
+        motorRLtorq = vec3(( -RLTorq*pow ) ,0 ,(-RLTorq*pow))
+        motorRRtorq = vec3((  RRTorq*pow ) ,0 ,(-RRTorq*pow))
         -- ローターごとに推力を設定
-        rigid:addForce( motorFLFoce, true, motorFLPos + properaOffset, true)
-        rigid:addForce( motorRLFoce, true, motorRLPos + properaOffset, true)
-        rigid:addForce( motorFRFoce, true, motorFRPos + properaOffset, true)
-        rigid:addForce( motorRRFoce, true, motorRRPos + properaOffset, true)
+        rigid:addForce( motorFLFoce, true, motorFLPos + propellerOffset, true)
+        rigid:addForce( motorRLFoce, true, motorRLPos + propellerOffset, true)
+        rigid:addForce( motorFRFoce, true, motorFRPos + propellerOffset, true)
+        rigid:addForce( motorRRFoce, true, motorRRPos + propellerOffset, true)
         -- 対抗トルク
         rigid:addForce(motorFLtorq , true, motorFLPos, true)
         rigid:addForce(motorFRtorq , true, motorFRPos, true)
@@ -314,10 +370,10 @@ function fpvUpdate(dt)
             -- ペラの回転（再現のみ）
             maxRPS = 3000 -- 最大回転数（RPS）
             currentRPS = maxRPS * math.max(math.log(foce+1,2)+1, 0.001)
-            drone:findNodes('rotorFR'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * FRFoce * 360 * dt)))
-            drone:findNodes('rotorFL'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * FLFoce * 360 * dt)))
-            drone:findNodes('rotorRR'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * RRFoce * 360 * dt)))
-            drone:findNodes('rotorRL'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * RLFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'FR'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * FRFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'FL'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * FLFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'RR'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * RRFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'RL'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * RLFoce * 360 * dt)))
             -- RPMとしてスロットルの値を設定
             sound:setParam('pow',math.lerp(0,30000,foce ))
         end
@@ -329,19 +385,17 @@ function foceDebug()
     if Config.debugMode and drone then
         -- 見やすいように短くしている 
         -- 推力
-        render.debugArrow(tf:transformPoint(motorFLPos + properaOffset) , tf:transformPoint((motorFLPos + properaOffset) + motorFLFoce*0.01))
-        render.debugArrow(tf:transformPoint(motorFRPos + properaOffset) , tf:transformPoint((motorFRPos + properaOffset) + motorFRFoce*0.01))
-        render.debugArrow(tf:transformPoint(motorRLPos + properaOffset) , tf:transformPoint((motorRLPos + properaOffset) + motorRLFoce*0.01))
-        render.debugArrow(tf:transformPoint(motorRRPos + properaOffset) , tf:transformPoint((motorRRPos + properaOffset) + motorRRFoce*0.01))
+        render.debugArrow(tf:transformPoint(motorFLPos + propellerOffset) , tf:transformPoint((motorFLPos + propellerOffset) + motorFLFoce*0.01))
+        render.debugArrow(tf:transformPoint(motorFRPos + propellerOffset) , tf:transformPoint((motorFRPos + propellerOffset) + motorFRFoce*0.01))
+        render.debugArrow(tf:transformPoint(motorRLPos + propellerOffset) , tf:transformPoint((motorRLPos + propellerOffset) + motorRLFoce*0.01))
+        render.debugArrow(tf:transformPoint(motorRRPos + propellerOffset) , tf:transformPoint((motorRRPos + propellerOffset) + motorRRFoce*0.01))
         ---- トルク
-        render.debugArrow(tf:transformPoint(motorFLPos + properaOffset) ,tf:transformPoint(motorFLPos + properaOffset - motorFLtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorFRPos + properaOffset) ,tf:transformPoint(motorFRPos + properaOffset - motorFRtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorRLPos + properaOffset) ,tf:transformPoint(motorRLPos + properaOffset - motorRLtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorRRPos + properaOffset) ,tf:transformPoint(motorRRPos + properaOffset - motorRRtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorFLPos + propellerOffset) ,tf:transformPoint(motorFLPos + propellerOffset - motorFLtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorFRPos + propellerOffset) ,tf:transformPoint(motorFRPos + propellerOffset - motorFRtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorRLPos + propellerOffset) ,tf:transformPoint(motorRLPos + propellerOffset - motorRLtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorRRPos + propellerOffset) ,tf:transformPoint(motorRRPos + propellerOffset - motorRRtorq*0.01))
     end
 end
-
-
 
 local inputLPos = vec2(320,500)
 local inputRPos = vec2(480,500)
@@ -376,10 +430,10 @@ function fpvHUD()
     end
 end
 
-
 local ControllerCount = 0
 local ControllerList  = {}
 local AxisList = {}
+local ModelList ={}
 function appinitialize()
 
     ac.debug(debugOrder().."Controller Count",ac.getJoystickCount()-1)
@@ -402,6 +456,19 @@ function appinitialize()
     end
 
     APPINITIALIZED = true
+end
+
+local INITIALIZED
+function initialize()
+
+    local models = io.scanDir(ac.getFolder(ac.FolderID.ScriptOrigin)..'/model','*')
+    for i = 0,#models do
+        ModelList[i] = models[i+1]
+    end
+
+    loadDrone('00_kiyo-eng_5inch')
+
+    INITIALIZED = true
 end
 
 local function JoyStickSetting()
@@ -653,9 +720,21 @@ function FpvStickSetting()
 
 end
 
+local unitIndex = 0
+function droneSelect()
+    local unitChanged
+    unitIndex , unitChanged= ui.combo("##unitIndex",unitIndex,ui.ComboFlags.HeightLargest,ModelList)
+
+    if unitChanged then 
+        ac.debug(debugOrder()..'Unit' , unitIndex..ModelList[unitIndex] )
+        loadDrone(ModelList[unitIndex] )
+    end
+end
+
 function setting()
     getJoystickInput()
     ui.tabBar("Settings", function()
+        ui.tabItem("Units", droneSelect)
         ui.tabItem("JoyStickSetting", JoyStickSetting)
         ui.tabItem("FPVSetting", FpvStickSetting)
     end)
@@ -674,6 +753,7 @@ end
 
 function update()
     if not APPINITIALIZED then appinitialize() end
+    if not INITIALIZED then initialize() end
 
     -- デバッグ用
     debugOrder(true)

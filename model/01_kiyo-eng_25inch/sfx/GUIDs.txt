@@ -1,0 +1,3 @@
+{979875f9-6910-4c66-862c-273ff1c361b6} event:/kiyo-eng_qc/power
+{08f6ba78-f576-4f9f-a232-47657d5fec19} bus:/
+{52c63f31-3019-409d-9dbf-b50b0443073e} bank:/kiyo-eng_qc

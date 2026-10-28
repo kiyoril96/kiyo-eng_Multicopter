@@ -37,6 +37,8 @@ local JoyStick = ac.storage{
     yawExpo = 0.7,
 }
 
+local JoyStickList = {} 
+
 local JoyStickIndex = -1
 
 local droneConfig ={}
@@ -432,25 +434,32 @@ function fpvHUD()
 end
 
 local ControllerCount = 0
-local ControllerList  = {}
+local selectedJoystick = 1
+-- local ControllerList  = {}
 local AxisList = {}
 local ModelList ={}
 function appinitialize()
 
-    ac.debug(debugOrder().."Controller Count",ac.getJoystickCount()-1)
-
-    repeat
-        if ac.getJoystickInstanceGUID(ControllerCount) == JoyStick.GUID then
-            JoyStickIndex = ControllerCount
+    for i = 0 ,ac.getJoystickCount()-1,1 do 
+        if ac.getJoystickName(i) ~= nil then
+            ac.log(i..' name:'..(ac.getJoystickName(i) or '')..'##'..(ac.getJoystickInstanceGUID(i) or ''))
+            -- ControllerList[#ControllerList+1] = (ac.getJoystickName(i) or 'Unnamed')..'##'..(ac.getJoystickInstanceGUID(i) or '')
+            JoyStickList[#JoyStickList+1] = {
+                index = i
+                , name = (ac.getJoystickName(i) or ('Unnamed'..i))
+                , productGuid = (ac.getJoystickProductGUID(i) or '')
+                , InstanceGuid = (ac.getJoystickInstanceGUID(i) or '') }
+    
+            if ac.getJoystickInstanceGUID(i) == JoyStick.GUID then
+                JoyStickIndex = i
+                selectedJoystick = #JoyStickList
+            end
         end
-        ControllerList[ControllerCount] = ac.getJoystickName(ControllerCount).."##"..ac.getJoystickInstanceGUID(ControllerCount)
-        ControllerCount = ControllerCount + 1
-    until ac.getJoystickInstanceGUID(ControllerCount) == nil
+    end
 
     if JoyStickIndex == -1 then
-        JoyStickIndex = 0
+        JoyStickIndex = JoyStickList[1].index
     end
-    JoyStick.GUID = ac.getJoystickInstanceGUID(JoyStickIndex)
 
     for i = 0,ac.getJoystickAxisCount(JoyStickIndex)-1 do
         AxisList[i] = "Axis "..i
@@ -481,7 +490,14 @@ local function JoyStickSetting()
     ui.textAligned("Controller:",vec2(1, 0.5),vec2(90,20))
     ui.sameLine()
     ui.setNextItemWidth(300)
-    JoyStickIndex , ControllerChanged= ui.combo("##JoyStickIndex",JoyStickIndex,ui.ComboFlags.HeightLargest,ControllerList)
+    ControllerChanged= ui.combo("##JoyStickIndex",JoyStickList[selectedJoystick].name,ui.ComboFlags.HeightLargest,function()
+        for i, v in ipairs(JoyStickList) do
+            if ui.selectable(v.name, JoyStickIndex == v.index) then
+                JoyStickIndex = v.index
+                selectedJoystick = i
+            end
+        end
+    end)
 
     -- throttle
     ui.offsetCursorY(10)

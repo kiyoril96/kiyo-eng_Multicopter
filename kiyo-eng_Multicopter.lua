@@ -327,15 +327,15 @@ function fpvUpdate(dt)
 
 
         -- 推力
-        FLFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
-        FRFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
-        RLFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
-        RRFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
+        FLFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
+        FRFoce = math.max( (foce) - (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
+        RLFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) + (roll * (Config.rollMix*rollMixMult)) + ( yaw*(Config.yawMix*yawMixMult)) ,0)
+        RRFoce = math.max( (foce) + (pitch * (Config.pitchMix*pitchMixMult)) - (roll * (Config.rollMix*rollMixMult)) + (-yaw*(Config.yawMix*yawMixMult)) ,0)
         -- 対抗トルク(斜めに掛けるので0.5√2しとく)
-        FLTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
-        FRTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
-        RLTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
-        RRTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        FLTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        FRTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        RLTorq = foce + (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
+        RRTorq = foce - (yaw*(Config.yawMix*yawMixMult)) * 0.5 * math.sqrt(2)
 
         -- 実際の適用値へ
         -- モーターパワー
@@ -344,14 +344,14 @@ function fpvUpdate(dt)
         motorRLFoce = vec3( 0 ,(RLFoce*pow) ,0 )
         motorRRFoce = vec3( 0 ,(RRFoce*pow) ,0 )
         -- トルク
-        motorFLtorq = vec3(( -FLTorq*pow ) ,0 ,( FLTorq*pow))
-        motorFRtorq = vec3((  FRTorq*pow ) ,0 ,( FRTorq*pow))
-        motorRLtorq = vec3(( -RLTorq*pow ) ,0 ,(-RLTorq*pow))
-        motorRRtorq = vec3((  RRTorq*pow ) ,0 ,(-RRTorq*pow))
+        motorFLtorq = vec3(( FLTorq*pow ) ,0 ,(-FLTorq*pow))
+        motorFRtorq = vec3(( -FRTorq*pow ) ,0 ,(-FRTorq*pow))
+        motorRLtorq = vec3(( RLTorq*pow ) ,0 ,( RLTorq*pow))
+        motorRRtorq = vec3(( -RRTorq*pow ) ,0 ,( RRTorq*pow))
         -- ローターごとに推力を設定
         rigid:addForce( motorFLFoce, true, motorFLPos + propellerOffset, true)
-        rigid:addForce( motorRLFoce, true, motorRLPos + propellerOffset, true)
         rigid:addForce( motorFRFoce, true, motorFRPos + propellerOffset, true)
+        rigid:addForce( motorRLFoce, true, motorRLPos + propellerOffset, true)
         rigid:addForce( motorRRFoce, true, motorRRPos + propellerOffset, true)
         -- 対抗トルク
         rigid:addForce(motorFLtorq , true, motorFLPos, true)
@@ -370,10 +370,10 @@ function fpvUpdate(dt)
             -- ペラの回転（再現のみ）
             maxRPS = 3000 -- 最大回転数（RPS）
             currentRPS = maxRPS * math.max(math.log(foce+1,2)+1, 0.001)
-            drone:findNodes(propellerNode..'FR'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * FRFoce * 360 * dt)))
             drone:findNodes(propellerNode..'FL'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * FLFoce * 360 * dt)))
-            drone:findNodes(propellerNode..'RR'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * RRFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'FR'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * FRFoce * 360 * dt)))
             drone:findNodes(propellerNode..'RL'):rotate(vec3(0,0,1),math.rad( math.rad(currentRPS * RLFoce * 360 * dt)))
+            drone:findNodes(propellerNode..'RR'):rotate(vec3(0,0,1),math.rad(-math.rad(currentRPS * RRFoce * 360 * dt)))
             -- RPMとしてスロットルの値を設定
             sound:setParam('pow',math.lerp(0,30000,foce ))
         end
@@ -390,10 +390,11 @@ function foceDebug()
         render.debugArrow(tf:transformPoint(motorRLPos + propellerOffset) , tf:transformPoint((motorRLPos + propellerOffset) + motorRLFoce*0.01))
         render.debugArrow(tf:transformPoint(motorRRPos + propellerOffset) , tf:transformPoint((motorRRPos + propellerOffset) + motorRRFoce*0.01))
         ---- トルク
-        render.debugArrow(tf:transformPoint(motorFLPos + propellerOffset) ,tf:transformPoint(motorFLPos + propellerOffset - motorFLtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorFRPos + propellerOffset) ,tf:transformPoint(motorFRPos + propellerOffset - motorFRtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorRLPos + propellerOffset) ,tf:transformPoint(motorRLPos + propellerOffset - motorRLtorq*0.01))
-        render.debugArrow(tf:transformPoint(motorRRPos + propellerOffset) ,tf:transformPoint(motorRRPos + propellerOffset - motorRRtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorFLPos + propellerOffset) ,tf:transformPoint(motorFLPos + motorFLtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorFRPos + propellerOffset) ,tf:transformPoint(motorFRPos + motorFRtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorRLPos + propellerOffset) ,tf:transformPoint(motorRLPos + motorRLtorq*0.01))
+        render.debugArrow(tf:transformPoint(motorRRPos + propellerOffset) ,tf:transformPoint(motorRRPos + motorRRtorq*0.01))
+
     end
 end
 
@@ -756,30 +757,33 @@ function update()
     if not INITIALIZED then initialize() end
 
     -- デバッグ用
-    debugOrder(true)
-    ac.debug( debugOrder()..'loaded',soundbankLoaded)
-    
-    ac.debug(debugOrder()..'foce',foce)
-    ac.debug(debugOrder()..'roll',roll)
-    ac.debug(debugOrder()..'pitch',pitch)
-    ac.debug(debugOrder()..'yaw',yaw)
-
-    ac.debug(debugOrder()..'rawThrottle',rawThrottle)
-    ac.debug(debugOrder()..'rawRoll',rawRoll)
-    ac.debug(debugOrder()..'rawPitch',rawPitch)
-    ac.debug(debugOrder()..'rawYaw',rawYaw)
-
-    ac.debug(debugOrder()..'FLFoce',FLFoce)
-    ac.debug(debugOrder()..'FRFoce',FRFoce)
-    ac.debug(debugOrder()..'RLFoce',RLFoce)
-    ac.debug(debugOrder()..'RRFoce',RRFoce)
-
-    ac.debug(debugOrder()..'FLTorq',FLTorq)
-    ac.debug(debugOrder()..'FRTorq',FRTorq)
-    ac.debug(debugOrder()..'RLTorq',RLTorq)
-    ac.debug(debugOrder()..'RRTorq',RRTorq)
-    
-    if rigid then 
-        ac.debug(debugOrder()..'speed',rigid:getSpeedKmh())
-    end
+    --debugOrder(true)
+    --ac.debug( debugOrder()..'APPINITIALIZED',APPINITIALIZED)
+    --ac.debug( debugOrder()..'INITIALIZED',INITIALIZED)
+--
+    --ac.debug( debugOrder()..'loaded',soundbankLoaded)
+    --
+    --ac.debug(debugOrder()..'foce',foce)
+    --ac.debug(debugOrder()..'roll',roll)
+    --ac.debug(debugOrder()..'pitch',pitch)
+    --ac.debug(debugOrder()..'yaw',yaw)
+--
+    --ac.debug(debugOrder()..'rawThrottle',rawThrottle)
+    --ac.debug(debugOrder()..'rawRoll',rawRoll)
+    --ac.debug(debugOrder()..'rawPitch',rawPitch)
+    --ac.debug(debugOrder()..'rawYaw',rawYaw)
+--
+    --ac.debug(debugOrder()..'FLFoce',FLFoce)
+    --ac.debug(debugOrder()..'FRFoce',FRFoce)
+    --ac.debug(debugOrder()..'RLFoce',RLFoce)
+    --ac.debug(debugOrder()..'RRFoce',RRFoce)
+--
+    --ac.debug(debugOrder()..'FLTorq',FLTorq)
+    --ac.debug(debugOrder()..'FRTorq',FRTorq)
+    --ac.debug(debugOrder()..'RLTorq',RLTorq)
+    --ac.debug(debugOrder()..'RRTorq',RRTorq)
+    --
+    --if rigid then 
+    --    ac.debug(debugOrder()..'speed',rigid:getSpeedKmh())
+    --end
 end
